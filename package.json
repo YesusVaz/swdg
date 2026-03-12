@@ -1,0 +1,24 @@
+{
+  "name": "swdg",
+  "version": "1.0.0",
+  "description": "Sistema Web de Gestão - Monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "backend:dev": "npm run dev --workspace=@swdg/backend",
+    "backend:build": "npm run build --workspace=@swdg/backend",
+    "backend:start": "npm run start --workspace=@swdg/backend",
+    "backend:prisma:generate": "npm run prisma:generate --workspace=@swdg/backend",
+    "backend:prisma:migrate": "npm run prisma:migrate --workspace=@swdg/backend",
+    "backend:prisma:studio": "npm run prisma:studio --workspace=@swdg/backend"
+  },
+  "keywords": [
+    "monorepo",
+    "gestao",
+    "kanban"
+  ],
+  "author": "",
+  "license": "ISC"
+}

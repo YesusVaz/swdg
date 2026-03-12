@@ -1,0 +1,290 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  teamMembers      TeamMember[]
+  tasksCreated     Task[]          @relation("TaskCreator")
+  tasksAssigned    TaskAssignment[]
+  cardsCreated     KanbanCard[]    @relation("CardCreator")
+  cardsAssigned    KanbanCardAssignment[]
+  comments         Comment[]
+  refreshTokens    RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// TEAMS & ROLES
+// ============================================
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  slug        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members      TeamMember[]
+  roles        Role[]
+  kanbanBoards KanbanBoard[]
+  tasks        Task[]
+
+  @@map("teams")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  permissions Json     @default("[]") // Array of permission strings
+  isDefault   Boolean  @default(false)
+  teamId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  team    Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members TeamMember[]
+
+  @@unique([teamId, name])
+  @@map("roles")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  userId    String
+  teamId    String
+  roleId    String
+  joinedAt  DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, teamId])
+  @@map("team_members")
+}
+
+// ============================================
+// KANBAN BOARD
+// ============================================
+
+model KanbanBoard {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  teamId      String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  team     Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  sections KanbanSection[]
+
+  @@map("kanban_boards")
+}
+
+model KanbanSection {
+  id          String   @id @default(uuid())
+  name        String
+  color       String?  @default("#6366f1") // Hex color
+  position    Int      @default(0)
+  boardId     String
+  isCollapsed Boolean  @default(false)
+  limit       Int?     // WIP limit (Work In Progress)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  board KanbanBoard  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards KanbanCard[]
+
+  @@map("kanban_sections")
+}
+
+model KanbanCard {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  position    Int       @default(0)
+  sectionId   String
+  priority    Priority  @default(MEDIUM)
+  dueDate     DateTime?
+  createdById String
+  taskId      String?   @unique // Optional link to a task
+  labels      Json      @default("[]") // Array of label objects { name, color }
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  section     KanbanSection          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  createdBy   User                   @relation("CardCreator", fields: [createdById], references: [id])
+  task        Task?                  @relation(fields: [taskId], references: [id])
+  assignments KanbanCardAssignment[]
+  comments    Comment[]
+
+  @@map("kanban_cards")
+}
+
+model KanbanCardAssignment {
+  id        String   @id @default(uuid())
+  cardId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  card KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, userId])
+  @@map("kanban_card_assignments")
+}
+
+// ============================================
+// TASKS
+// ============================================
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  estimatedHours Float?
+  actualHours    Float?
+  teamId      String
+  createdById String
+  parentId    String?    // For subtasks
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  team        Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy   User             @relation("TaskCreator", fields: [createdById], references: [id])
+  parent      Task?            @relation("Subtasks", fields: [parentId], references: [id])
+  subtasks    Task[]           @relation("Subtasks")
+  assignments TaskAssignment[]
+  kanbanCard  KanbanCard?
+  tags        TaskTag[]
+
+  @@map("tasks")
+}
+
+model TaskAssignment {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@map("task_assignments")
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  color     String    @default("#6366f1")
+  createdAt DateTime  @default(now())
+
+  tasks TaskTag[]
+
+  @@map("tags")
+}
+
+model TaskTag {
+  taskId String
+  tagId  String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@map("task_tags")
+}
+
+// ============================================
+// COMMENTS
+// ============================================
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  authorId  String
+  cardId    String?
+  parentId  String?  // For replies
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  card     KanbanCard? @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
